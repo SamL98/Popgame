@@ -1,0 +1,7 @@
+geonameid: integer
+name: string
+asciiname: string
+latitude: float
+longitude: float
+cc1: string
+population: integer

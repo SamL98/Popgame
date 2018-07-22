@@ -1,0 +1,1 @@
+select name, lat, lng, cc, pop, 111.045*degrees(acos(cos(radians(40.0046294))*cos(radians(lat))*cos(radians(-83.01298259999999)-radians(lng))+sin(radians(40.0046294))*sin(radians(lat)))) as km_dist from Cities use index (latitude) order by km_dist limit 15;

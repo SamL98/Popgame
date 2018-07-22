@@ -1,0 +1,269 @@
+<head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+  </body>
+</head>
+<div id="game">
+    <!--<img src="/image/map.jpg" width="200" height="200" id="map" />-->
+    <div id="map"></div>
+    <div id="coords"></div>
+    <div id="start-menu">
+        <div class="form-group">
+            <input class="form-control" type="text" id="usernameIn" placeholder="Enter your username" />
+        </div>
+        <div class="form-group">
+            <button class="btn btn-primary" id="start-button" class="form-control">Start</button>
+        </div>
+    </div>
+    <div id="game-bar">
+        <div class="form-group"><label class="form-control menu-lbl" id="time-label"/>Time Left (s):<label id="time-left-lbl"/></label></div>
+        <div class="form-group"><label class="form-control menu-lbl" id="dist-label"/>Distance (km):</div>
+    </div>
+    <div id="size-slider"></div>
+</div>
+<script>
+    var mouseDown = false
+    var isDragging = false
+
+    var originPoint = [0, 0]
+    var originCoord = [0, 0]
+    var arcPoint = [0, 0]
+    var arcCoord = [0, 0]
+    var circle = undefined
+
+    $('#size-slider').css({
+        'background-color': 'white',
+        'position': 'absolute',
+        'z-index': 1000,
+        'width': 100, 'height': 50,
+        'display': 'none'
+    })
+
+    function degrees(num) {
+        return num*180/Math.PI
+    }
+    function radians(num) {
+        return num*Math.PI/180
+    }
+
+    function haversine(coords1, coords2) {
+        //return 111.045*degrees(Math.acos(Math.cos(radians(coords1[0]))*Math.cos(radians(coords2[0]))*
+                //Math.cos(radians(coords1[1])-radians(coords2[1]))+Math.sin(radians(coords[0]))*Math.sin(radians(coords[0])))) * 1000
+        var R = 6371e3; // metres
+        var φ1 = radians(coords1[0]);
+        var φ2 = radians(coords2[0]);
+        var Δφ = radians((coords2[0]-coords1[0]));
+        var Δλ = radians((coords2[1]-coords1[1]));
+
+        var a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        var d = R * c;
+        return d
+    }
+
+    function initMap() {
+        // Create a map. Use the Gall-Peters map type.
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 0,
+          center: {lat: 0, lng: 0},
+          mapTypeControl: false,
+          draggable: false,
+          panControl: false
+        });
+
+        initGallPeters();
+        map.mapTypes.set('gallPeters', gallPetersMapType);
+        map.setMapTypeId('gallPeters');
+
+        // Show the lat and lng under the mouse cursor.
+        var coordsDiv = document.getElementById('coords');
+        map.controls[google.maps.ControlPosition.TOP_CENTER].push(coordsDiv);
+
+        map.addListener('mousedown', function(event) {
+            setTimeout(() => {
+                originCoord[0] = event.latLng.lat()
+                originCoord[1] = event.latLng.lng()
+                circle = new google.maps.Circle({
+                    strokeColor: 'black',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 2,
+                    fillColor: 'yellow',
+                    fillOpacity: 0.55,
+                    map: map,
+                    center: event.latLng,
+                    radius: 100000
+                })
+            }, 100)
+        })
+
+        $('#map').on('mousedown', (event) => {
+            mouseDown = true
+            var sW = parseInt($('#size-slider').css('width')),
+                sH = parseInt($('#size-slider').css('height'))
+
+            $('#size-slider').css({
+                'display': 'block',
+                'top': ''+ (event.clientX - sW/2),
+                'left': ''+ (event.clientY - sH/2)
+            })
+
+            if (circle) { circle.setMap(null) }
+        })
+
+        $('#map').on('mousemove', (event) => {
+            console.log('mousemove')
+            if (!mouseDown) { return }
+        })
+
+         $('#map').on('mouseup', function(event) {
+            mouseDown = false
+            $('#size-slider').css('display', 'none')
+        })
+
+        map.addListener('mousemove', function(event) {
+            coordsDiv.textContent =
+                'lat: ' + Math.round(event.latLng.lat()) + ', ' +
+                'lng: ' + Math.round(event.latLng.lng());
+
+            if (!mouseDown) { return }
+            if (!circle) {
+                console.error('circle should be initialized by now')
+                return
+            }
+
+            arcCoord[0] = event.latLng.lat()
+            arcCoord[1] = event.latLng.lng()
+
+            console.log(originCoord, arcCoord, haversine(originCoord, arcCoord))
+            circle.setRadius(haversine(originCoord, arcCoord))
+        });
+
+        // Add some markers to the map.
+        map.data.setStyle(function(feature) {
+          return {
+            title: feature.getProperty('name'),
+            optimized: false
+          };
+        });
+      }
+
+      var gallPetersMapType;
+      function initGallPeters() {
+        var GALL_PETERS_RANGE_X = 800;
+        var GALL_PETERS_RANGE_Y = 512;
+
+        // Fetch Gall-Peters tiles stored locally on our server.
+        gallPetersMapType = new google.maps.ImageMapType({
+          getTileUrl: function(coord, zoom) {
+            var scale = 1 << zoom;
+
+            // Wrap tiles horizontally.
+            var x = ((coord.x % scale) + scale) % scale;
+
+            // Don't wrap tiles vertically.
+            var y = coord.y;
+            if (y < 0 || y >= scale) return null;
+
+            return 'https://developers.google.com/maps/documentation/' +
+                   'javascript/examples/full/images/gall-peters_' + zoom +
+                   '_' + x + '_' + y + '.png';
+          },
+          tileSize: new google.maps.Size(GALL_PETERS_RANGE_X, GALL_PETERS_RANGE_Y),
+          minZoom: 0,
+          maxZoom: 1,
+          name: 'Gall-Peters'
+        });
+
+        // Describe the Gall-Peters projection used by these tiles.
+        gallPetersMapType.projection = {
+          fromLatLngToPoint: function(latLng) {
+            var latRadians = latLng.lat() * Math.PI / 180;
+            return new google.maps.Point(
+                GALL_PETERS_RANGE_X * (0.5 + latLng.lng() / 360),
+                GALL_PETERS_RANGE_Y * (0.5 - 0.5 * Math.sin(latRadians)));
+          },
+          fromPointToLatLng: function(point, noWrap) {
+            var x = point.x / GALL_PETERS_RANGE_X;
+            var y = Math.max(0, Math.min(1, point.y / GALL_PETERS_RANGE_Y));
+
+            return new google.maps.LatLng(
+                Math.asin(1 - 2 * y) * 180 / Math.PI,
+                -180 + 360 * x,
+                noWrap);
+          }
+        };
+      }
+
+    let mapWidth = $('#map').width()
+    let mapHeight = $('#map').height()
+    var time = 10
+
+    $('#start-button').click(() => {
+        $('#start-menu').remove();
+        addGameBar()
+        startTimer()
+    })
+
+    function addGameBar() {
+        $('#game-bar').css({'display': 'block'})
+    }
+    function startTimer() {
+        $('#time-left-lbl').text(time)
+        var interval = setInterval(() => {
+            time--
+            $('#time-left-lbl').text(time)
+            if (time == 0) {
+                endGame(interval)
+            }
+        }, 1000)
+    }
+    function endGame(interval) {
+        clearInterval(interval)
+        alert('Times up!')
+    }
+</script>
+<script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyACoUNBeovSY34ff9v7egubgYpW4mj6mFE&callback=initMap"></script>
+<style>
+    #coords {
+        background-color: black;
+        color: white;
+        padding: 5px;
+      }
+    html {
+        background-color: black;
+    }
+    #map {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+    }
+    #drag-container {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+    }
+    #start-menu {
+        position: absolute;
+        margin-top: 20%;
+        margin-left: 40%;
+        width: 25%;
+        border-radius: 10px;
+        padding: 10px 10px 10px 10px;
+        background-color: white;
+    }
+    #start-button {
+        float: right;
+    }
+    #game-bar {
+        display: none;
+        position: absolute;
+        left: 5px;
+        bottom: 15px;
+        border-radius: 10px;
+        height: 25%;
+        width: 25%;
+        background-color: white;
+    }
+</style>
